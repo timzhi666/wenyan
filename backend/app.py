@@ -57,16 +57,24 @@ else:
     SQL_PLACEHOLDER = '?'
 
 
+def adapt_sql(sql):
+    return sql.replace('?', SQL_PLACEHOLDER)
+
+
+def execute(cursor, sql, params=()):
+    cursor.execute(adapt_sql(sql), params)
+
+
 def query_one(conn, cursor, sql, params=()):
     """执行查询，返回一行字典"""
-    cursor.execute(sql, params)
+    cursor.execute(adapt_sql(sql), params)
     row = cursor.fetchone()
     return dict(row) if row else None
 
 
 def query_all(conn, cursor, sql, params=()):
     """执行查询，返回所有行字典列表"""
-    cursor.execute(sql, params)
+    cursor.execute(adapt_sql(sql), params)
     rows = cursor.fetchall()
     return [dict(r) for r in rows]
 
@@ -311,23 +319,19 @@ def add_word():
         db_close(conn, c)
         return jsonify({'error': f'"{word}" 已在词库中，不允许重复添加'}), 409
 
-    c.execute('INSERT INTO words (word, weight) VALUES (?, 1.0)', (word,))
-    if USE_POSTGRES:
-        word_id = c.fetchone()[0] if c.lastrowid == 0 else c.lastrowid  # psycopg2 uses FETCH LASTROWID concept differently
-        # Actually for psycopg2 with RETURNING or lastrowid
-    else:
-        word_id = c.lastrowid
-
-    # 获取刚插入的 word_id
+    execute(c, 'INSERT INTO words (word, weight) VALUES (?, 1.0)', (word,))
     if USE_POSTGRES:
         result = query_one(conn, c, 'SELECT id FROM words WHERE word=?', (word,))
         word_id = result['id']
+    else:
+        word_id = c.lastrowid
 
     for i, def_data in enumerate(definitions):
         definition = def_data.get('definition', '').strip()
         if not definition:
             continue
-        c.execute(
+        execute(
+            c,
             'INSERT INTO definitions (word_id, definition, sort_order) VALUES (?, ?, ?)',
             (word_id, definition, i)
         )
@@ -342,7 +346,8 @@ def add_word():
             sentence = ex_data.get('sentence', '').strip()
             if not sentence:
                 continue
-            c.execute(
+            execute(
+                c,
                 '''INSERT INTO examples (definition_id, sentence, source_article, author, dynasty, sort_order)
                    VALUES (?, ?, ?, ?, ?, ?)''',
                 (def_id, sentence,
@@ -365,7 +370,7 @@ def delete_word(word_id):
         db_close(conn, c)
         return jsonify({'error': '实词不存在'}), 404
 
-    c.execute('DELETE FROM words WHERE id=?', (word_id,))
+    execute(c, 'DELETE FROM words WHERE id=?', (word_id,))
     db_commit(conn)
     db_close(conn, c)
     return jsonify({'success': True})
@@ -532,14 +537,15 @@ def submit_game():
         if is_correct:
             correct_count += 1
             correct_words.append(word_name)
-            c.execute('UPDATE words SET correct_count = correct_count + 1 WHERE id=?', (word_id,))
+            execute(c, 'UPDATE words SET correct_count = correct_count + 1 WHERE id=?', (word_id,))
         else:
             wrong_words.append(word_name)
-            c.execute('UPDATE words SET wrong_count = wrong_count + 1 WHERE id=?', (word_id,))
+            execute(c, 'UPDATE words SET wrong_count = wrong_count + 1 WHERE id=?', (word_id,))
 
     is_perfect = 1 if correct_count == len(results) else 0
 
-    c.execute(
+    execute(
+        c,
         '''INSERT INTO game_records
            (total_questions, correct_count, is_perfect, correct_words, wrong_words)
            VALUES (?, ?, ?, ?, ?)''',

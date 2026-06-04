@@ -7,7 +7,7 @@ import os
 import csv
 import io
 
-CSV_PATH = '/Users/zhifangzhu/Documents/资料/小小胖/Workbuddy文言文实词/表格_20260603.csv'
+CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data.csv')
 
 # 文章出处 -> (作者, 朝代)
 ARTICLE_META = {
